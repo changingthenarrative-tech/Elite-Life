@@ -1,13 +1,8 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getTodaysEvents } from "@/lib/integrations/google/calendar";
-import { getUnreadHighlights } from "@/lib/integrations/google/gmail";
-import { assembleContext } from "@/lib/ai/context-assembler";
-import { generateBrief } from "@/lib/ai/brief";
-import { saveBrief, getLatestBriefSince } from "@/lib/db/briefs";
-import { listGoals } from "@/lib/db/goals";
+import { getLatestBriefSince } from "@/lib/db/briefs";
+import { generateAndSaveBrief } from "@/lib/features/generate-daily-brief";
 
-// Load today's saved brief (if one exists) so the page can show it on open.
 export async function GET(request: Request) {
   const supabase = await createClient();
   const {
@@ -42,7 +37,6 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const supabase = await createClient();
-
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -51,12 +45,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
 
-  let body: {
-    providerToken?: string;
-    timeMin?: string;
-    timeMax?: string;
-    timezone?: string;
-  };
+  let body;
   try {
     body = await request.json();
   } catch {
@@ -76,30 +65,19 @@ export async function POST(request: Request) {
   }
 
   try {
-    const [events, emails, goals] = await Promise.all([
-      getTodaysEvents(providerToken, timeMin, timeMax),
-      getUnreadHighlights(providerToken),
-      listGoals(supabase, user.id, { activeOnly: true }),
-    ]);
-
-    const context = assembleContext(
-      { events, emails, goals },
-      { date: timeMin, timezone },
-    );
-    const { brief, raw, input, model } = await generateBrief(context);
-
-    await saveBrief(supabase, {
+    const { brief, eventCount, emailCount } = await generateAndSaveBrief({
+      supabase,
       userId: user.id,
-      content: brief,
-      aiInput: input,
-      aiOutput: raw,
-      model,
+      providerToken,
+      timeMin,
+      timeMax,
+      timezone,
     });
 
     return NextResponse.json({
       brief,
-      eventCount: events.length,
-      emailCount: emails.length,
+      eventCount,
+      emailCount,
       generatedAt: new Date().toISOString(),
     });
   } catch (err) {

@@ -111,6 +111,16 @@ export function MorningBrief() {
       if (session?.user) {
         setEmail(session.user.email ?? null);
         setStatus((s) => (s === "signedOut" || s === "loading" ? "ready" : s));
+        if (session.provider_refresh_token) {
+          fetch("/api/integrations/google", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              refreshToken: session.provider_refresh_token,
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            }),
+          }).catch(() => {});
+        }
       } else {
         setEmail(null);
         setBrief(null);
